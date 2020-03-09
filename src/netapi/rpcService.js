@@ -5,30 +5,35 @@ import { KEY_USER_SETTING } from '@/constants/customer';
 import { URL_AUTH_LOGIN } from '@/netapi/RestApiUrls';
 import { Modal, Toast } from 'antd-mobile';
 
+/**
+ * 约定：
+ * 1. 没有统一提示（如：接口调用异常时的全局提示），所有的异常提示在页面内处理
+ * 2. 调用时，当前页面应该有一个引导请求，通常如果一个页面的某个请求需要登录，此请求为引导请求
+ * 3. 
+ */
+
+const errorMap = {
+  LoginCancel: '登录取消',
+  LoginError: '登录错误',
+};
+
 // 伪造返回结果
-function ErrorJsonResult(error) {
+function MockResponse(error) {
+  debugger;
+
   return {
     code: -999,
     message: error,
-    data: ''
-  };
-}
-
-// 拒绝登录
-function RejectLoginResult() {
-  return {
-    code: -9999,
-    message: '您取消了登录',
-    data: ''
+    data: errorMap[error],
   };
 }
 
 // 登录
-function login(options, login, password) {
-  return new Promise((resolve) => {
+function login(success, fail, login, password) {
+  return new Promise((resolve, reject) => {
     debugger;
 
-    const loginOptions = {
+    const options = {
       url: URL_AUTH_LOGIN,
       method: 'POST',
       data: JSON.stringify({
@@ -38,32 +43,46 @@ function login(options, login, password) {
       }),
     };
 
-    request(loginOptions).then((res) => {
-      debugger;
-      console.log(res);
-
-      if (res.code === 0) {
+    request(options)
+      .then((res) => {
         debugger;
-  
-        // 提交登录请求后，服务端返回正常，登录成功
-  
-        // 保存到本地存储
-        localStorageV.setItem(KEY_USER_SETTING, Object.assign({ ...localStorageV.getItem(KEY_USER_SETTING) }, { token: res.data }));
 
-        // 设置 token 以重新发起请求
-        options.header['authorization'] = res.data;
+        if (res.code === 0) {
+          debugger;
+    
+          // 提交登录请求后，服务端返回正常，登录成功
+    
+          // 保存到本地存储
+          localStorageV.setItem(KEY_USER_SETTING, Object.assign({ ...localStorageV.getItem(KEY_USER_SETTING) }, { token: res.data }));
 
+          // 解决 -> 关闭弹窗
+          resolve();
+
+          // -> 登录成功回调
+          success && success(res);
+
+        } else {
+          debugger;
+
+          // 提交登录请求后，服务端返回正常，登录失败
+          Toast.fail('登录失败，请确认您输入的信息正确后重试', 3);
+        }
+      })
+      .catch((error) => {
+        /*
+        // 模式一：立即提示
+        // 拒绝 -> 保持弹窗
+        reject();
+        // -> 提示
+        Toast.fail('登录错误，请稍后重试', 3);
+        */
+
+        // 模式二：页面内提示
+        // 解决 -> 关闭弹窗
         resolve();
-
-        // 重新发起请求
-        return request(options);
-      } else {
-        debugger;
-
-        // 提交登录请求后，服务端返回正常，登录失败
-        Toast.fail('登录失败，请确认您输入的信息正确后重试', 3);
-      }
-    });
+        // -> 登录错误回调
+        fail && fail(error);
+      });
 
   });
 }
@@ -71,6 +90,19 @@ function login(options, login, password) {
 // 弹窗登录
 function loginModal(options) {
   return new Promise((resolve, reject) => {
+
+    // 弹窗关闭后的回调
+    const success = (res) => {
+      debugger;
+      resolve(res);
+    };
+
+    // 弹窗关闭后的回调
+    const fail = (res) => {
+      debugger;
+      reject('LoginError');
+    };
+
     Modal.prompt(
       'Login',
       'Please input login information',
@@ -80,20 +112,22 @@ function loginModal(options) {
           onPress: () => {
             debugger;
 
-            // 拒绝登录，进入下一个流程
-            reject('rejectLogin');
+            // 拒绝登录，进入最后的 catch 块
+            reject('LoginCancel');
           },
         },
         {
           text: '确定',
-          onPress: login.bind(null, options),
+          onPress: login.bind(null, success, fail),
         },
       ],
       'login-password',
       null,
       ['Please input name', 'Please input password'],
     );
+
   });
+
 }
 
 // 请求封装
@@ -118,7 +152,6 @@ function request(options) {
   })
   .then(response => {
     debugger;
-    // console.log(response);
 
     if (response.ok === true) {
       debugger;
@@ -130,42 +163,79 @@ function request(options) {
       // 这里主要完成返回值的转换
       return response.json();
 
-    } else if (response.status === 401) {
+    } else if ([401, 403].includes(response.status)) {
       debugger;
-      // 验证 token 失败
-      throw '401';
-      // return ErrorJsonResult('登录超时');
 
-    } else if (response.status === 403) {
-      debugger;
-      // 弹窗登录
-      // return ErrorJsonResult('没有权限');
+      throw 'InvalidToken';
 
-    } else if (response.status === 404) {
+    } else if ([404].includes(response.status)) {
       debugger;
-      // console.log('地址错误: ' + options.url);
-      // return ErrorJsonResult('服务地址错误');
+      throw 'UrlError';
 
-    } else if (response.status === 500) {
+    } else if ([500].includes(response.status)) {
       debugger;
-      // console.log('服务错误: ' + options.url);
-      // return ErrorJsonResult('服务错误');
+      throw 'serverError';
 
     } else {
       debugger;
-      // console.log('其他错误: ' + options.url);
-      // return ErrorJsonResult('其他错误');
+      throw 'otherError';
     }
   })
   .catch(error => {
     debugger;
-    // console.log('网络故障时或请求被阻止: ' + options.url);
-    return ErrorJsonResult('网络故障时或请求被阻止');
+
+    // 有几种情况会进入这里：
+
+    if (typeof error === 'string') {
+      debugger;
+
+      // 1. 接收上一个 then 的 throw 值，继续 throw
+      throw error;
+
+    } else {
+      debugger;
+
+      // 2. 网络错误或请求被阻止，如跨域
+      throw error.message;
+    }
+
   })
 }
 
+// 处理异常
+function handleCatch(tag, options, error) {
+  debugger;
+
+  if (error === 'NoToken' || error === 'InvalidToken') {
+    debugger;
+
+    // 当 token 无效时，弹窗登录
+
+    // 有几种情况会进入这里：
+    // 1. 无 token 时
+    // 2. 服务端返回值表明 token 无效时
+
+    return loginModal()
+      .then((res) => {
+        debugger;
+
+        // 设置 token 以重新发起请求
+        options.header['authorization'] = syncVarIterator.getter(localStorageV.getItem(KEY_USER_SETTING), 'token');
+        
+        // 重新发起请求
+        return request(options);
+      });
+
+  } else {
+    debugger;
+
+    return MockResponse(error);
+  }
+
+}
+
 // 请求入口
-function requestV(options) {
+function requestEntry(options) {
   debugger;
   const token = syncVarIterator.getter(localStorageV.getItem(KEY_USER_SETTING), 'token');
 
@@ -185,49 +255,11 @@ function requestV(options) {
     } else {
       debugger;
       // 当无 token 时，转入下一个流程
-      reject();
+      reject('NoToken');
     }
   })
+    .catch(handleCatch.bind(null, 'catch01', options))
     /*
-    .then((res) => {
-      debugger;
-      console.log(res);
-      if (res.code == -1) { // TODO: 401
-        throw '401';
-      }
-      return res;
-    })
-    */
-    .catch((error) => {
-      debugger;
-
-      // 当无 token 时，弹窗登录
-      if (token === undefined) {
-        debugger;
-
-        return loginModal(options);
-      }
-
-
-
-      console.log(error);
-      // 尝试自动重新登录
-
-
-      /*
-      return Taro.login()
-        .then((res) => {
-          return request({
-            url: `${URL_WX_LOGIN}?city=${city}&code=${res.code}`,
-          });
-        })
-        .then((res) => {
-          console.log(res);
-          options.header['HOS-USER-TICKET'] = res.data.token;
-          return request(options);
-        });
-      */
-    })
     .then((res) => {
       debugger;
       // 有几种情况会进入这里：
@@ -240,179 +272,28 @@ function requestV(options) {
         return res.data;
       }
 
-      Toast.fail(res.message, 3000);
-    })
-    .catch((error) => {
-      debugger;
-      console.log(error);
-
-      // 拒绝登录
-      if (error === 'rejectLogin') {
-        debugger;
-        return RejectLoginResult();
-      }
-    });
+      Toast.fail(res.message, 3);
+    })*/
+    .catch(handleCatch.bind(null, 'catch02', options));
 }
 
 const rpcService = {
   rGet: (url, extend) => {
-    return requestV(Object.assign({ url }, { extend }, { method: 'GET' }));
+    return requestEntry(Object.assign({ url }, { extend }, { method: 'GET' }));
   },
   rPost: (url, data, extend) => {
-    return requestV(Object.assign({ url }, { extend }, { method: 'POST', data: JSON.stringify(data) }));
+    return requestEntry(Object.assign({ url }, { extend }, { method: 'POST', data: JSON.stringify(data) }));
   },
   rPut: (url, data, extend) => {
-    return requestV(Object.assign({ url }, { extend }, { method: 'PUT', data: JSON.stringify(data) }));
+    return requestEntry(Object.assign({ url }, { extend }, { method: 'PUT', data: JSON.stringify(data) }));
   },
   rDelete: (url, extend) => {
-    return requestV(Object.assign({ url }, { extend }, { method: 'DELETE' }));
+    return requestEntry(Object.assign({ url }, { extend }, { method: 'DELETE' }));
   },
 };
 
 export default rpcService;
 
-// function request(options) {
-
-//   // 请求头
-//   const header = {
-//     'Accept': 'application/json',
-//     'Content-Type': 'application/json; charset=utf-8'
-//   };
-
-//   /*
-//   // 获取会话标识
-//   const sessionKey = localStorage.getItem(LOCALSTORAGEKEY_AUTHORIZATION);
-
-//   // 附加会话标识到请求头
-//   if (sessionKey) {
-//     header[LOCALSTORAGEKEY_AUTHORIZATION] = sessionKey;
-//   }
-//   */
-
-//   return fetch(options.url, {
-//     // 必须和 header 的 'Content-Type' 匹配
-//     body: options.data,
-//     // *default, no-cache, reload, force-cache, only-if-cached
-//     cache: 'no-cache',
-//     // include, same-origin, *omit
-//     credentials: 'include',
-//     headers: header,
-//     // *GET, POST, PUT, DELETE, etc.
-//     method: options.method,
-//     // no-cors, cors, *same-origin
-//     // mode: 'no-cors',
-//     // manual, *follow, error
-//     redirect: 'follow',
-//     // *client, no-referrer
-//     referrer: 'no-referrer',
-//   })
-//   .then(response => {
-//     // console.log(response);
-
-//     if (response.ok === true) {
-//       return response.json();
-//     } else if (response.status === 401) {
-//       history.push('/auth/login');
-//       return ErrorJsonResult('登录超时');
-//     } else if (response.status === 403) {
-//       console.log('没有权限: ' + options.url);
-//       // 弹窗登录
-//       return ErrorJsonResult('没有权限');
-//     } else if (response.status === 404) {
-//       // console.log('地址错误: ' + options.url);
-//       return ErrorJsonResult('服务地址错误');
-//     } else if (response.status === 500) {
-//       // console.log('服务错误: ' + options.url);
-//       return ErrorJsonResult('服务错误');
-//     } else {
-//       // console.log('其他错误: ' + options.url);
-//       return ErrorJsonResult('其他错误');
-//     }
-//   })
-//   .catch(error => {
-//     // console.log('网络故障时或请求被阻止: ' + options.url);
-//     return ErrorJsonResult('网络故障时或请求被阻止');
-//   })
-// }
-
-// const rpcService = {
-//   rGet: (url, extend) => {
-//     return request(Object.assign({ url }, extend, { method: 'GET' }));
-//   },
-//   rPost: (url, data) => {
-//     return request(Object.assign({ url }, { method: 'POST', data: JSON.stringify(data) }));
-//   },
-//   rPut: (url, data) => {
-//     return request(Object.assign({ url }, { method: 'PUT', data: JSON.stringify(data) }));
-//   },
-//   rDelete: (url, data) => {
-//     return request(Object.assign({ url }, { method: 'DELETE' }));
-//   },
-// };
-
-// export default rpcService;
-
-
-// /* 开源 */
-// import Taro from '@tarojs/taro';
-// import querystring from 'query-string';
-// /* 自研 */
-// import { SVC_APP_KEY } from 'src/Constant';
-// import { getAppAuthorization } from 'src/utilities/signature';
-
-
-// // 伪造返回结果
-// function ErrorJsonResult(error) {
-//   return {
-//     code: -999,
-//     message: error,
-//     data: '',
-//   };
-// }
-
-// function request(options) {
-//   const timestamp = new Date().getTime();
-
-//   // 默认请求头
-//   const header = {
-//     'app_key': SVC_APP_KEY,
-//     'timestamp': timestamp,
-//     'authorization': getAppAuthorization(timestamp),
-//     'Content-Type': 'application/json;charset=UTF-8',
-//   };
-
-//   // 传参来的请求头
-//   if (options.header) {
-//     Object.keys(options.header).map((key) => {
-//       header[key] = options.header[key];
-//     });
-//   }
-
-//   return Taro.request({
-//     url: options.url,
-//     data: options.data,
-//     method: options.method,
-//     header,
-//   })
-//     .then((response) => {
-//       if (response.statusCode === 200) {
-//         return response.data;
-//       } else if (response.statusCode === 403) {
-//         // 弹窗登录
-//         // Taro.redirectTo({ url: '/areas/weapp/Auth/Index' });
-//         return ErrorJsonResult('没有权限');
-//       } else if (response.statusCode === 404) {
-//         return ErrorJsonResult('地址错误');
-//       } else if (response.statusCode === 500) {
-//         return ErrorJsonResult('服务错误');
-//       } else {
-//         return ErrorJsonResult('其他错误');
-//       }
-//     })
-//     .catch(() => {
-//       return ErrorJsonResult('网络故障时或请求被阻止');
-//     });
-// }
 
 // const rpcService = {
 //   rGet: (url, extend) => {
@@ -438,5 +319,3 @@ export default rpcService;
 //     return request(Object.assign({ url }, { method: 'DELETE' }));
 //   },
 // };
-
-// export default rpcService;
