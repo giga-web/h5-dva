@@ -13,6 +13,5 @@ const defaultParams = {
 
 export async function rPostAuthLogin(params) {
   const response = await rpcService.rPost(URL_AUTH_LOGIN, checkParams(defaultParams, params));
-  debugger;
   return response;
 }

@@ -12,6 +12,5 @@ const defaultParams = {
 
 export async function rGetOrgPositionDivisions(params) {
   const response = await rpcService.rGet(URL_ORG_POSITION_DIVISIONS + checkParams(defaultParams, params, true));
-  debugger;
   return response;
 }

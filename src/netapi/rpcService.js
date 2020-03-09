@@ -1,4 +1,5 @@
 import fetch from 'isomorphic-fetch';
+import { queryString } from 'query-string';
 import { localStorageV } from '@/utilities/base';
 import { syncVarIterator } from '@/utilities/util';
 import { KEY_USER_SETTING } from '@/constants/customer';
@@ -12,27 +13,37 @@ import { Modal, Toast } from 'antd-mobile';
  * 3. 
  */
 
+// 白名单
+const whiteList = [
+  '/icbp-php-web/auth/login',
+];
+
+// 错误对应的意思
 const errorMap = {
   LoginCancel: '登录取消',
   LoginError: '登录错误',
+  UrlError: '地址错误',
+  ServerError: '服务错误',
+  OtherError: '其他错误',
 };
 
-// 伪造返回结果
+// 错误时，伪造返回结果
 function MockResponse(error) {
-  debugger;
+  // debugger;
 
   return {
     code: -999,
     message: error,
-    data: errorMap[error],
+    data: errorMap[error] || '网络错误，请求被阻止',
   };
 }
 
 // 登录
 function login(success, fail, login, password) {
   return new Promise((resolve, reject) => {
-    debugger;
+    // debugger;
 
+    // 登录请求的参数
     const options = {
       url: URL_AUTH_LOGIN,
       method: 'POST',
@@ -43,32 +54,38 @@ function login(success, fail, login, password) {
       }),
     };
 
+    // 发送登录请求
     request(options)
       .then((res) => {
-        debugger;
+        // debugger;
 
+        // 登录请求响应成功
         if (res.code === 0) {
-          debugger;
+          // debugger;
     
-          // 提交登录请求后，服务端返回正常，登录成功
-    
+          // 登录成功
+          const token = res.data;
+
           // 保存到本地存储
-          localStorageV.setItem(KEY_USER_SETTING, Object.assign({ ...localStorageV.getItem(KEY_USER_SETTING) }, { token: res.data }));
+          localStorageV.setItem(KEY_USER_SETTING, Object.assign({ ...localStorageV.getItem(KEY_USER_SETTING) }, { token }));
 
           // 解决 -> 关闭弹窗
           resolve();
 
           // -> 登录成功回调
-          success && success(res);
+          success && success(token);
 
         } else {
-          debugger;
+          // debugger;
 
-          // 提交登录请求后，服务端返回正常，登录失败
+          // 登录失败
+          // 保持弹窗，显示提示
           Toast.fail('登录失败，请确认您输入的信息正确后重试', 3);
         }
       })
       .catch((error) => {
+        // debugger;
+
         /*
         // 模式一：立即提示
         // 拒绝 -> 保持弹窗
@@ -77,11 +94,13 @@ function login(success, fail, login, password) {
         Toast.fail('登录错误，请稍后重试', 3);
         */
 
+        /**/
         // 模式二：页面内提示
         // 解决 -> 关闭弹窗
         resolve();
         // -> 登录错误回调
         fail && fail(error);
+        /**/
       });
 
   });
@@ -91,18 +110,26 @@ function login(success, fail, login, password) {
 function loginModal(options) {
   return new Promise((resolve, reject) => {
 
-    // 弹窗关闭后的回调
-    const success = (res) => {
-      debugger;
-      resolve(res);
+    // 登录成功回调
+    const success = (token) => {
+      // debugger;
+
+      // 设置 token 以重新发起请求
+      options.header['authorization'] = token;
+      
+      // 重新发起请求
+      resolve(request(options));
     };
 
-    // 弹窗关闭后的回调
-    const fail = (res) => {
-      debugger;
+    // 登录报错回调
+    const fail = () => {
+      // debugger;
+
       reject('LoginError');
     };
 
+    // 显示弹窗
+    // TODO: 使用自定义的弹窗
     Modal.prompt(
       'Login',
       'Please input login information',
@@ -110,7 +137,7 @@ function loginModal(options) {
         {
           text: '取消',
           onPress: () => {
-            debugger;
+            // debugger;
 
             // 拒绝登录，进入最后的 catch 块
             reject('LoginCancel');
@@ -132,7 +159,7 @@ function loginModal(options) {
 
 // 请求封装
 function request(options) {
-  debugger;
+  // debugger;
   return fetch(options.url, {
     // 必须和 header 的 'Content-Type' 匹配
     body: options.data,
@@ -151,49 +178,48 @@ function request(options) {
     referrer: 'no-referrer',
   })
   .then(response => {
-    debugger;
+    // debugger;
 
     if (response.ok === true) {
-      debugger;
-      // 有几种情况会进入这里：
-      // 1. 有 token 并且 token 未失效，服务端返回正常
-      // 2. 无 token 时调用登录接口，服务端返回正常
-      // 3. 重新发起请求，服务端返回正常
+      // debugger;
 
-      // 这里主要完成返回值的转换
+      // 响应成功直接返回，不做统一提示
+      // 可能的去处：
+      // 1. 正常请求，直接返回到请求发起的地方
+      // 2. 登录请求，去到发送登录请求的地方
       return response.json();
 
     } else if ([401, 403].includes(response.status)) {
-      debugger;
+      // debugger;
 
       throw 'InvalidToken';
 
     } else if ([404].includes(response.status)) {
-      debugger;
+      // debugger;
       throw 'UrlError';
 
     } else if ([500].includes(response.status)) {
-      debugger;
-      throw 'serverError';
+      // debugger;
+      throw 'ServerError';
 
     } else {
-      debugger;
-      throw 'otherError';
+      // debugger;
+      throw 'OtherError';
     }
   })
   .catch(error => {
-    debugger;
+    // debugger;
 
-    // 有几种情况会进入这里：
+    // 这个 catch 存在的原因是，当网络错误或请求被阻止会直接进入这里。并且根据 error 的数据类型，统一返回字符串形式的错误
 
     if (typeof error === 'string') {
-      debugger;
+      // debugger;
 
       // 1. 接收上一个 then 的 throw 值，继续 throw
       throw error;
 
     } else {
-      debugger;
+      // debugger;
 
       // 2. 网络错误或请求被阻止，如跨域
       throw error.message;
@@ -204,31 +230,18 @@ function request(options) {
 
 // 处理异常
 function handleCatch(tag, options, error) {
-  debugger;
+  // debugger;
 
   if (error === 'NoToken' || error === 'InvalidToken') {
-    debugger;
+    // debugger;
 
-    // 当 token 无效时，弹窗登录
-
-    // 有几种情况会进入这里：
-    // 1. 无 token 时
-    // 2. 服务端返回值表明 token 无效时
-
-    return loginModal()
-      .then((res) => {
-        debugger;
-
-        // 设置 token 以重新发起请求
-        options.header['authorization'] = syncVarIterator.getter(localStorageV.getItem(KEY_USER_SETTING), 'token');
-        
-        // 重新发起请求
-        return request(options);
-      });
+    // 需要登录
+    return loginModal(options);
 
   } else {
-    debugger;
+    // debugger;
 
+    // 返回模拟响应
     return MockResponse(error);
   }
 
@@ -236,44 +249,44 @@ function handleCatch(tag, options, error) {
 
 // 请求入口
 function requestEntry(options) {
-  debugger;
-  const token = syncVarIterator.getter(localStorageV.getItem(KEY_USER_SETTING), 'token');
+  // debugger;
 
-  // 头部
-  const header = {
-    authorization: token,
-  };
+  // 请求头
+  const header = {};
+
+  // token
+  let token = false;
+
+  // 不包含在白名单中的请求
+  if (whiteList.includes(options.url)) {
+    token = true;
+
+  } else {
+    // 获取 token 值
+    token = syncVarIterator.getter(localStorageV.getItem(KEY_USER_SETTING), 'token');
+
+    // 设置
+    header['authorization'] = token;
+  }
 
   // 最终请求参数
   options = { ...options, header };
 
   return new Promise((resolve, reject) => {
     if (token) {
-      debugger;
+      // debugger;
+
       // 当有 token 时，直接发起请求，过程中可能会有 token 失效的问题，这种情况将根据请求的结果进行处理
       resolve(request(options));
+
     } else {
-      debugger;
-      // 当无 token 时，转入下一个流程
+      // debugger;
+
+      // 当无 token 时，进入 catch01 处，这也是 catch01 存在的原因
       reject('NoToken');
     }
   })
     .catch(handleCatch.bind(null, 'catch01', options))
-    /*
-    .then((res) => {
-      debugger;
-      // 有几种情况会进入这里：
-      // 1. 有 token 并且 token 未失效，服务端返回正常
-      // 2. 无 token 时调用登录接口，服务端返回正常
-      // 3. 重新发起请求，服务端返回正常
-
-      // 这里主要完成报错的统一处理
-      if (res.code === 0) {
-        return res.data;
-      }
-
-      Toast.fail(res.message, 3);
-    })*/
     .catch(handleCatch.bind(null, 'catch02', options));
 }
 
@@ -282,7 +295,17 @@ const rpcService = {
     return requestEntry(Object.assign({ url }, { extend }, { method: 'GET' }));
   },
   rPost: (url, data, extend) => {
-    return requestEntry(Object.assign({ url }, { extend }, { method: 'POST', data: JSON.stringify(data) }));
+    let dataString = '';
+
+    if (extend && extend.header && extend.header['Content-Type'] === 'application/x-www-form-urlencoded') {
+      // 表单方式的值
+      dataString = queryString.stringify(data);
+    } else {
+      // JSON方式的值
+      dataString = JSON.stringify(data);
+    }
+
+    return requestEntry(Object.assign({ url }, { extend }, { method: 'POST', data: dataString }));
   },
   rPut: (url, data, extend) => {
     return requestEntry(Object.assign({ url }, { extend }, { method: 'PUT', data: JSON.stringify(data) }));
@@ -293,29 +316,3 @@ const rpcService = {
 };
 
 export default rpcService;
-
-
-// const rpcService = {
-//   rGet: (url, extend) => {
-//     return request(Object.assign({ url }, extend, { method: 'GET' }));
-//   },
-//   rPost: (url, data, extend) => {
-//     let dataString = '';
-
-//     if (extend && extend.header && extend.header['Content-Type'] === 'application/x-www-form-urlencoded') {
-//       // 表单方式的值
-//       dataString = querystring.stringify(data);
-//     } else {
-//       // JSON方式的值
-//       dataString = JSON.stringify(data);
-//     }
-
-//     return request(Object.assign({ url }, extend, { method: 'POST', data: dataString }));
-//   },
-//   rPut: (url, data) => {
-//     return request(Object.assign({ url }, { method: 'PUT', data: JSON.stringify(data) }));
-//   },
-//   rDelete: (url) => {
-//     return request(Object.assign({ url }, { method: 'DELETE' }));
-//   },
-// };
