@@ -1,10 +1,16 @@
+/* 接口 */
+import { URL_AUTH_LOGIN } from '@/netapi/RestApiUrls';
+/* 开源-工具 */
 import fetch from 'isomorphic-fetch';
 import { queryString } from 'query-string';
+/* 开源-组件 */
+import { Toast } from 'antd-mobile';
+/* 自研-工具 */
 import { localStorageV } from '@/utilities/base';
 import { syncVarIterator } from '@/utilities/util';
 import { KEY_USER_SETTING } from '@/constants/customer';
-import { URL_AUTH_LOGIN } from '@/netapi/RestApiUrls';
-import { Modal, Toast } from 'antd-mobile';
+/* 自研-组件 */
+import PromptLogin from '@/components/Modal/Prompt/Login';
 
 /**
  * 约定：
@@ -79,7 +85,9 @@ function login(success, fail, login, password) {
           // debugger;
 
           // 登录失败
-          // 保持弹窗，显示提示
+          // 拒绝 -> 保持弹窗
+          reject(res);
+          // 提示
           Toast.fail('登录失败，请确认您输入的信息正确后重试', 3);
         }
       })
@@ -129,11 +137,10 @@ function loginModal(options) {
     };
 
     // 显示弹窗
-    // TODO: 使用自定义的弹窗
-    Modal.prompt(
-      'Login',
-      'Please input login information',
-      [
+    PromptLogin({
+      title: 'Login',
+      message: 'Please input login information',
+      callbackOrActions: [
         {
           text: '取消',
           onPress: () => {
@@ -148,10 +155,11 @@ function loginModal(options) {
           onPress: login.bind(null, success, fail),
         },
       ],
-      'login-password',
-      null,
-      ['Please input name', 'Please input password'],
-    );
+      type: 'login-password',
+      defaultValue: null,
+      placeholders: ['Please input name', 'Please input password'],
+      platform: 'ios',
+    });
 
   });
 
